@@ -1,0 +1,88 @@
+---
+title: "Gun Violence Map App"
+author: "Graydon Snider"
+date: "3/24/2018"
+output: ioslides_presentation
+subtitle: Link to app - https://graydon.shinyapps.io/MapApp/  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(forecast)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(reshape2)
+```
+
+## Outline of app
+
+People in the United States are exposed to unprecedented levels of gun violoence, including mass shootings (MS), defined as incidents with 4 or more casualties. 
+
+Borrowing from gunviolencearchive.org, I collected geo-linked MS data from 2014 - 2018. The app allows you to explore weekly and seasnal MS trends anywhere in the country over any time period within last 4 years. 
+
+Users can select one of Fatalities, Injuries or Casualties (Fatalities + Injuries). Click on popup icons to get more information about individual incidents. Raw data is provided in tables on second tab.
+
+
+## Monthly Stats
+
+Between 2014 and 2017, there were 7229 MS casualties in USA, with an injury:fatality ratio of about 3.8.
+
+```{r monthly, echo = F, fig.height= 3, fig.width= 8}
+shootings <- read.csv(file = "data/shootingTracker2014_2018.csv",stringsAsFactors = F) %>% 
+        mutate(formattedDate = as.Date(formattedDate)) %>% 
+        filter(year(formattedDate) <= 2017) %>%
+        mutate(dayofweek = ordered(dayofweek, levels=c("Mon", "Tues", "Wed", "Thurs", "Fri", "Sat", "Sun"))) %>%
+        mutate(month = as.Date(cut(as.Date(formattedDate), "month"))) %>%
+        mutate(month2 = month(formattedDate, label = T))  
+
+shootings2 <- shootings %>% select(month2,no_killed,no_injured,casualties) %>% 
+        group_by(month2) %>% 
+        summarise(no_killed = sum(no_killed),
+                  no_injured = sum(no_injured)) %>% 
+        melt(id.var = "month2")
+
+ggplot(shootings2,aes(month2,value)) + geom_bar(stat = "identity", color="black") + facet_wrap(~variable, scales = "free_y") + 
+        labs(x = "month", y = "totals") + aes(fill = variable)
+
+```
+
+Shootings peak in warmer months. The 2017 Vegas shooting (with over 500 casualties) created an October outlier compared to overall trend. In the app you can be explore specific regions.
+
+## Weekly Stats
+
+Despite news of violence in schools & workplaces, many mass shootings occur on the weekend, in particular Sunday. Perhaps this can be explained by many incidencts taking place in small gatherings such as parties.  
+
+```{r weekly, echo = F, fig.height= 3, fig.width= 8}
+shootings3 <- shootings %>% select(dayofweek,no_killed,no_injured,casualties) %>% 
+        group_by(dayofweek) %>% 
+        summarise(no_killed = sum(no_killed),
+                  no_injured = sum(no_injured)) %>% 
+        melt(id.var = "dayofweek")
+
+ggplot(shootings3,aes(dayofweek,value)) + geom_bar(stat = "identity", color="black") + facet_wrap(~variable, scales = "free_y") + labs(x = "Day of Week", y = "totals") + aes(fill = variable)
+```
+
+
+## Forecasting
+
+Given regular seasonal MS behaviour within the USA, we can also projet future MS violence levels over the next two years:
+
+```{r forecast,echo = F, fig.height= 3, fig.width= 8,message=FALSE}
+shootings4 <- read.csv(file = "data/shootingTracker2014_2018.csv",stringsAsFactors = F) %>% 
+        mutate(formattedDate = as.Date(formattedDate)) %>% 
+        filter(formattedDate < as.Date("2018-03-01")) %>%
+        mutate(month = as.Date(cut(as.Date(formattedDate), "month"))) %>% 
+        select(month,casualties) %>% 
+        group_by(month) %>% summarise(casualties = sum(casualties))
+
+time_series_sub <- ts(shootings4[,"casualties"],frequency = 12) 
+time_series_sub <- ts(as.vector(time_series_sub),frequency = 12)
+
+gg1 <- time_series_sub %>% stlf(robust = T,lambda = 0) %>% autoplot() 
+
+gg1 + labs(title = "Forecasting 'Business-as-usual' model", x= "Date", y = "Casualties") + theme_minimal() +
+        scale_x_continuous(breaks = seq(1,7,1), labels = seq(as.Date("2014-01-01"), length = 7, by = "1 year")) 
+```
+
+PS: Thanks for reading!
